@@ -27,6 +27,10 @@ fn rand() -> Input {
             out[i][j] = rand::random::<u32>();
         }
     }
+    out[2][0] = 0xffffffff;
+    out[2][1] = 0xffffffff;
+    out[2][2] = 0xffffffff;
+    out[2][3] = 0xffffffdf;
     Input {
         values: out
     }
@@ -37,13 +41,10 @@ async fn run() {
     let input = rand();
 
     let steps = execute_gpu(&input).await.unwrap();
-    let mut in0 = BigUint::new(input.values[0].to_vec());
+    let in0 = BigUint::new(input.values[0].to_vec());
     let in1 = BigUint::new(input.values[1].to_vec());
-    if in0 <= in1 {
-        println!("in0 is lt in1");
-        in0 += BigUint::from(2_u32).pow(128);
-    }
-    let expected = (in0 + in1) % BigUint::from(2_u32).pow(128);
+    let in2 = BigUint::new(input.values[2].to_vec());
+    let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
     println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
 
     let disp_steps: Vec<String> = steps
