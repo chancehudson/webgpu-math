@@ -125,7 +125,7 @@ fn mulmod(
 
     var r: array<u32, tuple_size>;
     var scratch1: array<u32, tuple_size>;
-    var scratch2: array<u32, tuple_size>;
+    // var scratch2: array<u32, tuple_size>;
     // // iterate over the bits of the smaller number
     // // and update r as needed
     while !is_zero(a) {
@@ -154,19 +154,18 @@ fn mulmod(
 
 @compute
 @workgroup_size(64)
-fn main() {
+fn main(
+    @builtin(global_invocation_id) global_id: vec3<u32>
+) {
     var in0: array<u32, tuple_size>;
     var in1: array<u32, tuple_size>;
     var p: array<u32, tuple_size>;
+    // let offset = tuple_size * global_id.x;
 
     for (var i: u32 = 0u; i < tuple_size; i++) {
-        in0[i] = inputs[0][i];
-        in1[i] = inputs[1][i];
-        p[i] = inputs[2][i];
+        in0[i] = inputs[global_id.x * tuple_size][i];
+        in1[i] = inputs[global_id.x * tuple_size + 1u][i];
+        p[i] = inputs[global_id.x * tuple_size + 2u][i];
     }
-    // shr(&in0, 1u);
-    // inputs[3] = in0;
-    inputs[3] = mulmod(&in0, &in1, &p);
-    // sub(&in0, &in1, &p);
-    // inputs[3] = p;
+    inputs[global_id.x * tuple_size + 3u] = mulmod(&in0, &in1, &p);
 }
