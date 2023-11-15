@@ -2,13 +2,25 @@
 // v[0] = least significant
 // v[tuple_size - 1] = most significant
 const tuple_size = 4u;
+const tuple_size_double = 2u * tuple_size;
 
-const upper_bitmask: u32 = 0xFFFF0000u;
-const lower_bitmask: u32 = 0x0000FFFFu;
+const iterations = 512u;
 
 @group(0)
 @binding(0)
-var<storage, read_write> inputs: array<array<u32, tuple_size>, 4>; // this is used as both input and output for convenience
+var<storage, read> input0: array<array<u32, tuple_size>, iterations>;
+
+@group(0)
+@binding(1)
+var<storage, read> input1: array<array<u32, tuple_size>, iterations>;
+
+@group(0)
+@binding(2)
+var<storage, read> input2: array<array<u32, tuple_size>, iterations>;
+
+@group(0)
+@binding(3)
+var<storage, read_write> outputs: array<array<u32, tuple_size>, iterations>;
 
 // limb based addition, not modular, overflows wrap
 // break each limb into 16 bit sections and add
@@ -19,24 +31,10 @@ fn add(
     out: ptr<function, array<u32, tuple_size>>
 ) {
     var carry: u32;
-    var upper: u32;
-    var lower: u32;
 
     for (var i: u32 = 0u; i < tuple_size; i++) {
-        // add the lower bits first
-        // then add the higher bits
-        upper = (((*in0)[i] & upper_bitmask) >> 16u) + (((*in1)[i] & upper_bitmask) >> 16u);
-        lower = ((*in0)[i] & lower_bitmask) + ((*in1)[i] & lower_bitmask) + carry;
-
-        // then determine the lower carry
-        carry = (lower & upper_bitmask) >> 16u;
-        // add the carry to the upper
-        upper += carry;
-        // determine the total carry for this limb
-        carry = (upper & upper_bitmask) >> 16u;
-
-        // combine upper and lower to form final limb
-        (*out)[i] = ((upper & lower_bitmask) << 16u) + (lower & lower_bitmask);
+        (*out)[i] = (*in0)[i] + (*in1)[i] + carry;
+        carry = u32(((*out)[i] < (*in0)[i]) || ((*out)[i] < (*in0)[i]));
     }
 }
 
@@ -152,9 +150,61 @@ fn mulmod(
     return r;
 }
 
+// multiply and store result in large buffer
+// then use barret reduction
+fn mulmod_2(
+    in0: ptr<function, array<u32, tuple_size>>,
+    in1: ptr<function, array<u32, tuple_size>>,
+    p: ptr<function, array<u32, tuple_size>>
+) {
+    var prod: array<u32, tuple_size_double>;
+
+    for (var i: u32 = 0u; i < tuple_size; i++) {
+
+    }
+
+}
+
+// @compute
+// @workgroup_size(64)
+// fn test_sub(
+//     @builtin(global_invocation_id) global_id: vec3<u32>
+// ) {
+//     var in0: array<u32, tuple_size>;
+//     var in1: array<u32, tuple_size>;
+//     var p: array<u32, tuple_size>;
+//     // let offset = tuple_size * global_id.x;
+
+//     for (var i: u32 = 0u; i < tuple_size; i++) {
+//         in0[i] = inputs[global_id.x * tuple_size][i];
+//         in1[i] = inputs[global_id.x * tuple_size + 1u][i];
+//         p[i] = inputs[global_id.x * tuple_size + 2u][i];
+//     }
+//     sub(&in0, &in1, &p);
+//     outputs[global_id.x * tuple_size] = p;
+// }
+
 @compute
 @workgroup_size(64)
-fn main(
+fn test_add(
+    @builtin(global_invocation_id) global_id: vec3<u32>
+) {
+    var in0: array<u32, tuple_size>;
+    var in1: array<u32, tuple_size>;
+    var p: array<u32, tuple_size>;
+
+    for (var i: u32 = 0u; i < tuple_size; i++) {
+        in0[i] = input0[global_id.x][i];
+        in1[i] = input1[global_id.x][i];
+        p[i] = input2[global_id.x][i];
+    }
+    add(&in0, &in1, &p);
+    outputs[global_id.x] = p;
+}
+
+@compute
+@workgroup_size(64)
+fn test_mulmod(
     @builtin(global_invocation_id) global_id: vec3<u32>
 ) {
     var in0: array<u32, tuple_size>;
@@ -163,9 +213,9 @@ fn main(
     // let offset = tuple_size * global_id.x;
 
     for (var i: u32 = 0u; i < tuple_size; i++) {
-        in0[i] = inputs[global_id.x * tuple_size][i];
-        in1[i] = inputs[global_id.x * tuple_size + 1u][i];
-        p[i] = inputs[global_id.x * tuple_size + 2u][i];
+        in0[i] = input0[global_id.x][i];
+        in1[i] = input1[global_id.x][i];
+        p[i] = input2[global_id.x][i];
     }
-    inputs[global_id.x * tuple_size + 3u] = mulmod(&in0, &in1, &p);
+    outputs[global_id.x] = mulmod(&in0, &in1, &p);
 }
