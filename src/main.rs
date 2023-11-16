@@ -5,7 +5,7 @@ use num_bigint::{BigUint};
 use std::time::{Instant, Duration};
 
 // number of multiplications to do
-const ITERATIONS: usize = 512;
+const ITERATIONS: usize = 1024;
 const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
 
@@ -58,6 +58,12 @@ fn rand() -> Input {
         // 4 fields for each multiplication
         // in0, in1, p, out
         for j in 0..LIMB_COUNT {
+            // in0[i][j] = 0;
+            // in1[i][j] = 0;
+            // if j == 0 || j == 1 {
+            //     in0[i][j] = rand::random::<u32>();
+            //     in1[i][j] = rand::random::<u32>();
+            // }
             in0[i][j] = rand::random::<u32>();
             in1[i][j] = rand::random::<u32>();
             if j == 0 {
@@ -73,6 +79,27 @@ fn rand() -> Input {
         value2: in2,
     }
 }
+
+// fn inv(&self, v: &BigUint, p: &BigUint) -> BigUint {
+//     let e_gcd = v.clone().extended_gcd(p);
+//     if e_gcd.gcd != BigUint::from(1) {
+//         panic!("modinv does not exist");
+//     }
+//     e_gcd.x
+//     // self.add(&e_gcd.x, &self.p)
+// }
+
+// fn barrett() {
+//     let data = rand();
+//     let v0 = BigUint::from(data.value0[0]);
+//     let v1 = BigUint::from(data.value0[1]);
+//     let p = BigUint::from(data.value0[2]);
+
+//     let k = 128;
+//     let r = BigUint::from(4).pow(128);
+//     let
+
+// }
 
 #[cfg_attr(test, allow(dead_code))]
 async fn run() {
@@ -136,6 +163,40 @@ async fn run() {
             if &gpu_out[i] != v {
                 println!("output mismatch for index {}. Expected {} got {}", i, v.to_string(), gpu_out[i].to_string());
             }
+        }
+
+    }
+
+    // execute the mul function
+    {
+        let input = rand();
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &cs_module,
+            entry_point: "test_mul",
+        });
+        let gpu_start = Instant::now();
+        let (gpu_out, time) = execute_gpu(&pipeline, &device, &queue, &input).await.unwrap();
+        println!("gpu: {:.2?}", time);
+        let cpu_start = Instant::now();
+        let mut out = Vec::new();
+        for i in 0..ITERATIONS {
+            let in0 = BigUint::new(input.value0[i].to_vec());
+            let in1 = BigUint::new(input.value1[i].to_vec());
+            // let in2 = BigUint::new(input.value2[i].to_vec());
+            // let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
+            let expected: BigUint = (in0 * in1); //% BigUint::from(2_u32).pow(128);
+            // println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
+            // println!("{}", expected.to_string());
+            out.push(expected);
+        }
+        println!("cpu: {:.2?}", cpu_start.elapsed());
+        for (i, v) in out.iter().enumerate() {
+            // println!("{} {}", v.to_str_radix(16), gpu_out[i].to_str_radix(16));
+            // if &gpu_out[i] != v {
+            //     println!("output mismatch for index {}. Expected {} got {}", i, v.to_string(), gpu_out[i].to_string());
+            // }
         }
 
     }
