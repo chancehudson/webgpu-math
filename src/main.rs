@@ -114,27 +114,6 @@ fn rand() -> Input {
     }
 }
 
-// fn inv(&self, v: &BigUint, p: &BigUint) -> BigUint {
-//     let e_gcd = v.clone().extended_gcd(p);
-//     if e_gcd.gcd != BigUint::from(1) {
-//         panic!("modinv does not exist");
-//     }
-//     e_gcd.x
-//     // self.add(&e_gcd.x, &self.p)
-// }
-
-// fn barrett() {
-//     let data = rand();
-//     let v0 = BigUint::from(data.value0[0]);
-//     let v1 = BigUint::from(data.value0[1]);
-//     let p = BigUint::from(data.value0[2]);
-
-//     let k = 128;
-//     let r = BigUint::from(4).pow(128);
-//     let
-
-// }
-
 #[cfg_attr(test, allow(dead_code))]
 async fn run() {
     // Instantiates instance of WebGPU
@@ -256,39 +235,6 @@ async fn run() {
         }
 
     }
-
-    // execute the mulmod function
-    // {
-    //     let input = rand();
-    //     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-    //         label: None,
-    //         layout: None,
-    //         module: &cs_module,
-    //         entry_point: "test_mulmod",
-    //     });
-    //     let (gpu_out, time) = execute_gpu(&pipeline, &device, &queue, &input).await.unwrap();
-    //     println!("gpu: {:.2?}", time);
-    //     let cpu_start = Instant::now();
-    //     let mut out = Vec::new();
-    //     for i in 0..ITERATIONS {
-    //         let in0 = BigUint::new(input.value0[i].to_vec());
-    //         let in1 = BigUint::new(input.value1[i].to_vec());
-    //         let in2 = BigUint::new(input.value2[i].to_vec());
-    //         // println!("{} {} {}", in0.to_string(), in1.to_string(), in2.to_string());
-    //         let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
-    //         // let expected: BigUint = (in0 + in1) % BigUint::from(2_u32).pow(128);
-    //         // println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
-    //         // println!("{}", expected.to_string());
-    //         out.push(expected);
-    //     }
-    //     println!("cpu: {:.2?}", cpu_start.elapsed());
-    //     for (i, v) in out.iter().enumerate() {
-    //         if &gpu_out[i] != v {
-    //             println!("output mismatch for index {}. Expected {} got {}", i, v.to_string(), gpu_out[i].to_string());
-    //         }
-    //     }
-
-    // }
 }
 
 async fn execute_gpu(
