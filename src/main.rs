@@ -8,7 +8,7 @@ use serde::{Serialize};
 
 // number of multiplications to do
 const ITERATIONS: usize = 4000;
-const INPUT_COUNT: usize = 3;
+// const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
 
 fn prime() -> (BigUint, BigUint, [u32; LIMB_COUNT], [u32; LIMB_COUNT*2]) {
@@ -170,7 +170,6 @@ async fn run() {
             module: &cs_module,
             entry_point: "test_add",
         });
-        let gpu_start = Instant::now();
         let (gpu_out, time) = execute_gpu(&pipeline, &device, &queue, &input).await.unwrap();
         println!("gpu: {:.2?}", time);
         let cpu_start = Instant::now();
@@ -178,7 +177,7 @@ async fn run() {
         for i in 0..ITERATIONS {
             let in0 = BigUint::new(input.value0[i].to_vec());
             let in1 = BigUint::new(input.value1[i].to_vec());
-            let in2 = BigUint::new(input.value2[i].to_vec());
+            // let in2 = BigUint::new(input.value2[i].to_vec());
             // let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
             let expected: BigUint = (in0 + in1) % BigUint::from(2_u32).pow(128);
             // println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
@@ -203,12 +202,11 @@ async fn run() {
             module: &cs_module,
             entry_point: "test_mul",
         });
-        let gpu_start = Instant::now();
         let (gpu_out, time) = execute_gpu(&pipeline, &device, &queue, &input).await.unwrap();
         println!("gpu: {:.2?}", time);
         let cpu_start = Instant::now();
         let mut out = Vec::new();
-        let (p, r, _, _) = prime();
+        let (p, _r, _, _) = prime();
         for i in 0..ITERATIONS {
             let in0 = BigUint::new(input.value0[i].to_vec());
             let in1 = BigUint::new(input.value1[i].to_vec());
