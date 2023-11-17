@@ -194,9 +194,10 @@ async fn run() {
         println!("cpu: {:.2?}", cpu_start.elapsed());
         for (i, v) in out.iter().enumerate() {
             // println!("{} {}", v.to_str_radix(16), gpu_out[i].to_str_radix(16));
-            // if &gpu_out[i] != v {
-            //     println!("output mismatch for index {}. Expected {} got {}", i, v.to_string(), gpu_out[i].to_string());
-            // }
+            let lower = v & BigUint::from(2_u32).pow(128) - BigUint::from(1_u32);
+            if gpu_out[i] != lower {
+                println!("output mismatch for index {}. Expected {} got {}", i, lower.to_str_radix(16), gpu_out[i].to_str_radix(16));
+            }
         }
 
     }
