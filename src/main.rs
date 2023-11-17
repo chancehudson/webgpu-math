@@ -3,9 +3,11 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 use num_bigint::{BigUint};
 use std::time::{Instant, Duration};
+use tinytemplate::TinyTemplate;
+use serde::{Serialize};
 
 // number of multiplications to do
-const ITERATIONS: usize = 2048;
+const ITERATIONS: usize = 4096;
 const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
 
@@ -38,6 +40,12 @@ fn main() {
     env_logger::init();
     prime();
     pollster::block_on(run());
+}
+
+#[derive(Serialize)]
+struct Context {
+    tuple_arr: Vec<u32>,
+    tuple_arr_double: Vec<u32>
 }
 
 #[repr(C)]
@@ -152,9 +160,16 @@ async fn run() {
         .unwrap();
 
     // Loads the shader from WGSL
+    let mut tt = TinyTemplate::new();
+    tt.add_template("shader", include_str!("shader.wgsl")).unwrap();
+    let context = Context {
+        tuple_arr: [0; LIMB_COUNT].to_vec(),
+        tuple_arr_double: [0; LIMB_COUNT*2].to_vec(),
+    };
+
     let cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&tt.render("shader", &context).unwrap())),
     });
 
     // #[cfg(target_arch = "wasm32")]

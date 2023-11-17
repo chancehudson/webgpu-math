@@ -6,7 +6,7 @@ const tuple_size_double = 2u * tuple_size;
 const tuple_size_quad = 4u * tuple_size;
 const tuple_bits = tuple_size * 32u;
 
-const iterations = 2048u;
+const iterations = 4096u;
 
 const upper_mask: u32 = 0xffff0000u;
 const lower_mask: u32 = 0x0000ffffu;
@@ -27,8 +27,20 @@ var<storage, read> input2: array<array<u32, tuple_size>, iterations>;
 @binding(3)
 var<storage, read_write> outputs: array<array<u32, tuple_size>, iterations>;
 
-const barrett_p: array<u32, 4> = array(3414163456u, 0u, 0u, 1u);
-const barrett_r = array(1u, 1108038245u, 3851751997u, 2754266496u, 4052254154u);
+const barrett_p: array<u32, 4> = array(
+        1u,
+        0u,
+        0u,
+        3414163456u
+    );
+const barrett_r = array(
+        4052254154u,
+        2754266496u,
+        3851751997u,
+        1108038245u,
+        1u,
+        0u, 0u, 0u
+        );
 
 // var<storage, read_write> sum_terms: array<array<array<u32, tuple_size_double>, tuple_size_double>, iterations>;
 
@@ -39,36 +51,42 @@ fn add(
     in0: ptr<function, array<u32, tuple_size>>,
     in1: ptr<function, array<u32, tuple_size>>,
     out: ptr<function, array<u32, tuple_size>>
-) {
+) \{
     var carry: u32;
 
-    for (var i: u32 = 0u; i < tuple_size; i++) {
-        (*out)[i] = (*in0)[i] + (*in1)[i] + carry;
-        carry = u32(((*out)[i] < (*in0)[i]) || ((*out)[i] < (*in1)[i]));
+    var i: u32;
+    {{ for _ in tuple_arr }}
+    \{
+        i = { @index }u;
+        (*out)[{ @index }u] = (*in0)[{ @index }u] + (*in1)[{ @index }u] + carry;
+        carry = u32(((*out)[{ @index }u] < (*in0)[{ @index }u]) || ((*out)[{ @index }u] < (*in1)[{ @index }u]));
     }
+    {{ endfor }}
 }
 
 fn add_double(
     in0: ptr<function, array<u32, tuple_size_double>>,
     in1: ptr<function, array<u32, tuple_size_double>>,
     out: ptr<function, array<u32, tuple_size_double>>
-) {
+) \{
     var carry: u32;
 
-    for (var i: u32 = 0u; i < tuple_size_double; i++) {
-        (*out)[i] = (*in0)[i] + (*in1)[i] + carry;
-        carry = u32(((*out)[i] < (*in0)[i]) || ((*out)[i] < (*in1)[i]));
+    {{ for _ in tuple_arr_double }}
+    \{
+        (*out)[{ @index }u] = (*in0)[{ @index }u] + (*in1)[{ @index }u] + carry;
+        carry = u32(((*out)[{ @index }u] < (*in0)[{ @index }u]) || ((*out)[{ @index }u] < (*in1)[{ @index }u]));
     }
+    {{ endfor }}
 }
 
 fn add_quad(
     in0: ptr<function, array<u32, tuple_size_quad>>,
     in1: ptr<function, array<u32, tuple_size_quad>>,
     out: ptr<function, array<u32, tuple_size_quad>>
-) {
+) \{
     var carry: u32;
 
-    for (var i: u32 = 0u; i < tuple_size_quad; i++) {
+    for (var i: u32 = 0u; i < tuple_size_quad; i++) \{
         (*out)[i] = (*in0)[i] + (*in1)[i] + carry;
         carry = u32(((*out)[i] < (*in0)[i]) || ((*out)[i] < (*in1)[i]));
     }
@@ -79,11 +97,11 @@ fn sub(
     in0: ptr<function, array<u32, tuple_size>>,
     in1: ptr<function, array<u32, tuple_size>>,
     out: ptr<function, array<u32, tuple_size>>
-) {
+) \{
     var negated: array<u32, tuple_size>;
     // negative carry
     var carry: u32;
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         (*out)[i] = (*in0)[i] - (*in1)[i] - carry;
         carry = u32((*out)[i] > (*in0)[i]);
     }
@@ -93,10 +111,10 @@ fn sub_double(
     in0: ptr<function, array<u32, tuple_size_double>>,
     in1: ptr<function, array<u32, tuple_size_double>>,
     out: ptr<function, array<u32, tuple_size_double>>
-) {
+) \{
     // negative carry
     var carry: u32;
-    for (var i: u32 = 0u; i < tuple_size_double; i++) {
+    for (var i: u32 = 0u; i < tuple_size_double; i++) \{
         (*out)[i] = (*in0)[i] - (*in1)[i] - carry;
         carry = u32((*out)[i] > (*in0)[i]);
     }
@@ -105,110 +123,71 @@ fn sub_double(
 fn gte(
     in0: ptr<function, array<u32, tuple_size>>,
     in1: ptr<function, array<u32, tuple_size>>
-) -> bool {
+) -> bool \{
     let start: u32 = tuple_size - 1u;
-    for (var i: u32 = start; i >= 0u; i++) {
-        if (*in0)[i] > (*in1)[i] {
+    for (var i: u32 = start; i >= 0u; i++) \{
+        if (*in0)[i] > (*in1)[i] \{
             return true;
-        } else if (*in0)[i] < (*in1)[i] {
+        } else if (*in0)[i] < (*in1)[i] \{
             return false;
         }
     }
     return true;
-}
-
-fn is_zero(v: ptr<function, array<u32, tuple_size>>) -> bool {
-    // this should be unrolled at compile time
-    for (var i: u32 = 0u; i < tuple_size; i++) {
-        if (*v)[i] != 0u {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn is_odd(v: ptr<function, array<u32, tuple_size>>) -> bool {
-    return ((*v)[0] & 1u) == 1u;
-}
-
-fn shl(v: ptr<function, array<u32, tuple_size>>, shift: u32) {
-    for (var i: u32 = 0u; i < tuple_size - 1u; i++) {
-        var _i = tuple_size - 1u - i;
-        (*v)[_i] <<= 1u;
-        (*v)[_i] += (*v)[_i - 1u] >> 31u;
-    }
-    (*v)[0u] <<= 1u;
-}
-
-fn shl_double(v: ptr<function, array<u32, tuple_size_double>>, shift: u32) {
-    for (var i: u32 = 0u; i < tuple_size_double - 1u; i++) {
-        var _i = tuple_size - 1u - i;
-        (*v)[_i] <<= 1u;
-        (*v)[_i] += (*v)[_i - 1u] >> 31u;
-    }
-    (*v)[0u] <<= 1u;
-}
-
-// operate in place
-fn shr(v: ptr<function, array<u32, tuple_size>>, shift: u32) {
-    for (var i: u32 = 0u; i < tuple_size - 1u; i++) {
-        (*v)[i] >>= 1u;
-        (*v)[i] += (*v)[i + 1u] << 31u;
-    }
-    (*v)[tuple_size - 1u] >>= 1u;
 }
 
 fn barrett(
     v: ptr<function, array<u32, tuple_size_double>>,
     p: ptr<function, array<u32, tuple_size>>
-) -> array<u32, tuple_size> {
+) -> array<u32, tuple_size> \{
     var out: array<u32, tuple_size>;
     var m = mul_r(v);
     var z = mul(p, &m);
     var f: array<u32, tuple_size_double>;
     sub_double(v, &z, &f);
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         out[i] = f[i];
     }
-    if gte(&out, p) {
+    if gte(&out, p) \{
         var out2: array<u32, tuple_size>;
         sub(&out, p, &out2);
         return out2;
-    } else {
+    } else \{
         return out;
     }
 }
 
 fn mul_r(
     in0: ptr<function, array<u32, tuple_size_double>>
-) -> array<u32, tuple_size> {
+) -> array<u32, tuple_size> \{
     // each result needs to be shifted by i*16 bits
-    var r = array(
-        4052254154u,
-        2754266496u,
-        3851751997u,
-        1108038245u,
-        1u,
-        0u, 0u, 0u
-    );
+    // var r = array(
+    //     4052254154u,
+    //     2754266496u,
+    //     3851751997u,
+    //     1108038245u,
+    //     1u,
+    //     0u, 0u, 0u
+    // );
     var results: array<array<u32, tuple_size_quad>, tuple_size_quad>;
-    for (var i: u32 = 0u; i < tuple_size_double; i++) {
-        let index = i*2u;
+    {{ for _ in tuple_arr_double }}
+    \{
+        let index = { @index }u*2u;
         results[index] = mul_16_double(
             in0,
-            r[i] & lower_mask,
+            barrett_r[{@index}u] & lower_mask,
             16u * index
         );
         results[index + 1u] = mul_16_double(
             in0,
-            r[i] >> 16u,
+            barrett_r[{@index}u] >> 16u,
             16u * (index + 1u)
         );
     }
+    {{ endfor }}
     // do final sum
     var count: u32 = tuple_size_quad;
-    while (count > 1u) {
-        for (var i: u32 = 0u; i < count; i += 2u) {
+    while (count > 1u) \{
+        for (var i: u32 = 0u; i < count; i += 2u) \{
             var t1 = results[i];
             var t2 = results[i + 1u];
             var j: array<u32, tuple_size_quad>;
@@ -218,7 +197,7 @@ fn mul_r(
         count >>= 1u;
     }
     var out: array<u32, tuple_size>;
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         out[i] = results[0u][i + tuple_size_double];
     }
     return out;
@@ -228,32 +207,34 @@ fn mul_16_double(
     in0: ptr<function, array<u32, tuple_size_double>>,
     in1: u32,
     left_shift: u32
-) -> array<u32, tuple_size_quad> {
+) -> array<u32, tuple_size_quad> \{
     var out: array<u32, tuple_size_quad>;
     // u32 * u32 = array<u32, 2>
     var carry: u32;
     let shift_registers = left_shift / 32u;
     let shift_bits = left_shift % 32u;
-    for (var i: u32 = 0u; i < tuple_size_double; i++) {
+    {{ for _ in tuple_arr_double }}
+    \{
         // multiply the lower bits by in1
-        var lower = (*in0)[i] & lower_mask;
+        var lower = (*in0)[{@index}u] & lower_mask;
         // add the carry to the product
         var r0 = lower * in1 + carry;
         // take the upper bits of the result as the carry
         carry = r0 >> 16u;
 
         // multiply the upper bits by in1
-        var upper = (*in0)[i] >> 16u;
+        var upper = (*in0)[{@index}u] >> 16u;
         // add the carry to the product
         var r1 = upper * in1 + carry;
 
-        out[i + shift_registers] = (r0 & lower_mask) + (r1 << 16u);
+        out[{@index}u + shift_registers] = (r0 & lower_mask) + (r1 << 16u);
         carry = r1 >> 16u;
     }
+    {{ endfor }}
     out[tuple_size_double + shift_registers] = carry;
     carry = 0u;
-    for (var i: u32 = shift_registers; i < tuple_size_quad; i++) {
-        if shift_bits == 16u {
+    for (var i: u32 = shift_registers; i < tuple_size_quad; i++) \{
+        if shift_bits == 16u \{
             var old_carry = carry;
             carry = out[i] >> shift_bits;
             out[i] <<= shift_bits;
@@ -266,11 +247,14 @@ fn mul_16_double(
 fn mul(
     in0: ptr<function, array<u32, tuple_size>>,
     in1: ptr<function, array<u32, tuple_size>>,
-) -> array<u32, tuple_size_double> {
+) -> array<u32, tuple_size_double> \{
     // each result needs to be shifted by i*16 bits
     var results: array<array<u32, tuple_size_double>, tuple_size_double>;
-    for (var i: u32 = 0u; i < tuple_size; i++) {
-        let index = i*2u;
+    var index: u32;
+    var i: u32;
+    {{ for _ in tuple_arr }}
+        index = { @index }u * 2u;
+        i = { @index }u;
         results[index] = mul_16(
             in0,
             (*in1)[i] & lower_mask,
@@ -281,11 +265,11 @@ fn mul(
             (*in1)[i] >> 16u,
             16u * (index + 1u)
         );
-    }
+    {{ endfor }}
     // do final sum
     var count: u32 = tuple_size_double;
-    while (count > 1u) {
-        for (var i: u32 = 0u; i < count; i += 2u) {
+    while (count > 1u) \{
+        for (var i: u32 = 0u; i < count; i += 2u) \{
             var t1 = results[i];
             var t2 = results[i + 1u];
             var j: array<u32, tuple_size_double>;
@@ -303,38 +287,44 @@ fn mul_16(
     in0: ptr<function, array<u32, tuple_size>>,
     in1: u32,
     left_shift: u32
-) -> array<u32, tuple_size_double> {
+) -> array<u32, tuple_size_double> \{
     var out: array<u32, tuple_size_double>;
     // u32 * u32 = array<u32, 2>
     var carry: u32;
     let shift_registers = left_shift / 32u;
     let shift_bits = left_shift % 32u;
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    // var i: u32;
+    {{ for _ in tuple_arr }}
+    \{
+        // i = { @index }u;
         // multiply the lower bits by in1
-        var lower = (*in0)[i] & lower_mask;
+        var lower = (*in0)[{ @index }u] & lower_mask;
         // add the carry to the product
         var r0 = lower * in1 + carry;
         // take the upper bits of the result as the carry
         carry = r0 >> 16u;
 
         // multiply the upper bits by in1
-        var upper = (*in0)[i] >> 16u;
+        var upper = (*in0)[{ @index }u] >> 16u;
         // add the carry to the product
         var r1 = upper * in1 + carry;
 
-        out[i + shift_registers] = (r0 & lower_mask) + (r1 << 16u);
+        out[{ @index }u + shift_registers] = (r0 & lower_mask) + (r1 << 16u);
         carry = r1 >> 16u;
     }
+    {{ endfor }}
     out[tuple_size + shift_registers] = carry;
     carry = 0u;
-    for (var i: u32 = shift_registers; i < tuple_size_double; i++) {
-        if shift_bits == 16u {
+    {{ for _ in tuple_arr_double }}
+    \{
+        if shift_bits == 16u \{
             var old_carry = carry;
-            carry = out[i] >> shift_bits;
-            out[i] <<= shift_bits;
-            out[i] += old_carry;
+            carry = out[{@index}u] >> shift_bits;
+            out[{@index}u] <<= shift_bits;
+            out[{@index}u] += old_carry;
         }
     }
+    {{ endfor }}
     return out;
 }
 
@@ -342,12 +332,12 @@ fn mul_16(
 @workgroup_size(64)
 fn test_mul(
     @builtin(global_invocation_id) global_id: vec3<u32>
-) {
+) \{
     var in0: array<u32, tuple_size>;
     var in1: array<u32, tuple_size>;
     var in2: array<u32, tuple_size>;
 
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         in0[i] = input0[global_id.x][i];
         in1[i] = input1[global_id.x][i];
         in2[i] = input2[global_id.x][i];
@@ -361,7 +351,7 @@ fn test_mul(
     var r = mul(&in0, &in1);
     var f = barrett(&r, &p);
     // only outputs the lower tuple of bits
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         outputs[global_id.x][i] = f[i];
     }
     // outputs[global_id.x] = p;
@@ -375,12 +365,12 @@ fn test_mul(
 @workgroup_size(64)
 fn test_add(
     @builtin(global_invocation_id) global_id: vec3<u32>
-) {
+) \{
     var in0: array<u32, tuple_size>;
     var in1: array<u32, tuple_size>;
     var p: array<u32, tuple_size>;
 
-    for (var i: u32 = 0u; i < tuple_size; i++) {
+    for (var i: u32 = 0u; i < tuple_size; i++) \{
         in0[i] = input0[global_id.x][i];
         in1[i] = input1[global_id.x][i];
         p[i] = input2[global_id.x][i];
