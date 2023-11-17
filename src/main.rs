@@ -7,7 +7,7 @@ use tinytemplate::TinyTemplate;
 use serde::{Serialize};
 
 // number of multiplications to do
-const ITERATIONS: usize = 4096;
+const ITERATIONS: usize = 4000;
 const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
 
@@ -45,7 +45,10 @@ fn main() {
 #[derive(Serialize)]
 struct Context {
     tuple_arr: Vec<u32>,
-    tuple_arr_double: Vec<u32>
+    tuple_arr_reverse: Vec<usize>,
+    tuple_arr_double: Vec<u32>,
+    input0: Vec<Vec<u32>>,
+    iterations: usize
 }
 
 #[repr(C)]
@@ -139,11 +142,15 @@ async fn run() {
         .unwrap();
 
     // Loads the shader from WGSL
+    let input = rand();
     let mut tt = TinyTemplate::new();
     tt.add_template("shader", include_str!("shader.wgsl")).unwrap();
     let context = Context {
         tuple_arr: [0; LIMB_COUNT].to_vec(),
+        tuple_arr_reverse: core::array::from_fn::<usize, LIMB_COUNT, _>(|i| LIMB_COUNT - 1 - i).to_vec(),
         tuple_arr_double: [0; LIMB_COUNT*2].to_vec(),
+        input0: input.value0.iter().map(|v| v.to_vec()).collect(),
+        iterations: ITERATIONS
     };
 
     let cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -156,7 +163,7 @@ async fn run() {
 
     // execute the add function
     {
-        let input = rand();
+        // let input = rand();
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: None,
             layout: None,
@@ -189,7 +196,7 @@ async fn run() {
 
     // execute the mul function
     {
-        let input = rand();
+        // let input = rand();
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: None,
             layout: None,
