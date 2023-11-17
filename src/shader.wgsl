@@ -242,12 +242,10 @@ fn mul_16(
     out[tuple_size + shift_registers] = carry;
     carry = 0u;
     for (var i: u32 = 0u; i < tuple_size_double; i++) {
-        if shift_bits == 16u {
-            let old_carry = carry;
-            carry = out[i] >> shift_bits;
-            out[i] <<= shift_bits;
-            out[i] += old_carry;
-        }
+        let old_carry = carry;
+        carry = out[i] >> (32u - shift_bits);
+        out[i] <<= shift_bits;
+        out[i] += old_carry;
     }
     return out;
 }
