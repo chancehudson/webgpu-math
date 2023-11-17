@@ -25,6 +25,8 @@ var<storage, read> input2: array<array<u32, tuple_size>, iterations>;
 @binding(3)
 var<storage, read_write> outputs: array<array<u32, tuple_size>, iterations>;
 
+// var<storage, read_write> sum_terms: array<array<array<u32, tuple_size_double>, tuple_size_double>, iterations>;
+
 // limb based addition, not modular, overflows wrap
 // break each limb into 16 bit sections and add
 // take the upper bits as the carry
@@ -195,17 +197,21 @@ fn mul(
         );
     }
     // do final sum
-    var out: array<u32, tuple_size_double>;
-    for (var i: u32 = 0u; i < tuple_size_double; i++) {
-        var t = results[i];
-        var j: array<u32, tuple_size_double>;
-        add_double(&out, &t, &j);
-        out = j;
+    var count: u32 = tuple_size_double;
+    while (count > 1u) {
+        for (var i: u32 = 0u; i < count; i += 2u) {
+            var t1 = results[i];
+            var t2 = results[i + 1u];
+            var j: array<u32, tuple_size_double>;
+            add_double(&t1, &t2, &j);
+            results[i] = j;
+        }
+        count >>= 1u;
     }
-    return out;
+    return results[0u];
 }
 
-// multiply a tuple number by a single 32 bit number
+// multiply a tuple number by a single 16 bit number
 // end up with tuple_size + 1 limbs
 fn mul_16(
     in0: ptr<function, array<u32, tuple_size>>,
@@ -267,6 +273,10 @@ fn test_mul(
     }
     // outputs[global_id.x] = p;
 }
+
+// step 1: build the list of 16 bit multiplications to be performed
+// step 2: build the list of tuple_size_double entries to be combined via addition
+// step 3: combine the
 
 @compute
 @workgroup_size(64)
