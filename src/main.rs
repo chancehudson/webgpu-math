@@ -5,9 +5,30 @@ use num_bigint::{BigUint};
 use std::time::{Instant, Duration};
 
 // number of multiplications to do
-const ITERATIONS: usize = 1024;
+const ITERATIONS: usize = 2048;
 const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
+
+fn prime() -> (BigUint, BigUint, [u32; LIMB_COUNT], [u32; LIMB_COUNT*2]) {
+    let p = BigUint::from(1_u32) + BigUint::from(407_u32) * BigUint::from(2_u32).pow(119_u32);
+    let r = BigUint::from(2_u32).pow(256) / p.clone();
+    let mut p_slice: [u32; LIMB_COUNT] = [0; LIMB_COUNT];
+    for (i, v) in p.to_u32_digits().iter().enumerate() {
+        p_slice[i] = v.clone();
+    }
+    let mut r_slice: [u32; LIMB_COUNT*2] = [0; LIMB_COUNT*2];
+    for (i, v) in r.to_u32_digits().iter().enumerate() {
+        r_slice[i] = v.clone();
+    }
+    // for v in p.to_u32_digits() {
+    //     println!("{}", v);
+    // }
+    // println!("break");
+    // for v in r.to_u32_digits() {
+    //     println!("{}", v);
+    // }
+    (p, r, p_slice, r_slice)
+}
 
 #[cfg(test)]
 mod tests;
@@ -15,6 +36,7 @@ mod tests;
 #[cfg(not(test))]
 fn main() {
     env_logger::init();
+    prime();
     pollster::block_on(run());
 }
 
@@ -66,6 +88,10 @@ fn rand() -> Input {
             // }
             in0[i][j] = rand::random::<u32>();
             in1[i][j] = rand::random::<u32>();
+            if j == 3 {
+                in0[i][j] = 0x000fffff;
+                in1[i][j] = 0x000fffff;
+            }
             if j == 0 {
                 in2[i][j] = 0xfffffffe;
             } else {
@@ -181,22 +207,36 @@ async fn run() {
         println!("gpu: {:.2?}", time);
         let cpu_start = Instant::now();
         let mut out = Vec::new();
+        let (p, r, _, _) = prime();
         for i in 0..ITERATIONS {
             let in0 = BigUint::new(input.value0[i].to_vec());
             let in1 = BigUint::new(input.value1[i].to_vec());
             // let in2 = BigUint::new(input.value2[i].to_vec());
             // let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
-            let expected: BigUint = (in0 * in1); //% BigUint::from(2_u32).pow(128);
+            let expected: BigUint = (in0.clone() * in1.clone()) % p.clone(); // BigUint::from(2_u32).pow(128);
             // println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
             // println!("{}", expected.to_string());
-            out.push(expected);
+            out.push(expected.clone());
+            // let m = (r.clone() * (in0.clone() * in1.clone())) / BigUint::from(2_u32).pow(256);
+            // let z = p.clone() * m;
+            // let f = ((in0.clone() * in1.clone()) - z.clone()) % BigUint::from(2_u32).pow(256);
+            // out.push(f.clone())
+            // println!("{} {}", f.to_string(), expected.to_string());
+
+    // var m = mul_r(v);
+    // var z = mul(p, &m);
+    // var f: array<u32, tuple_size_double>;
+    // sub_double(v, &z, &f);
         }
         println!("cpu: {:.2?}", cpu_start.elapsed());
         for (i, v) in out.iter().enumerate() {
             // println!("{} {}", v.to_str_radix(16), gpu_out[i].to_str_radix(16));
-            let lower = v & BigUint::from(2_u32).pow(128) - BigUint::from(1_u32);
-            if gpu_out[i] != lower {
-                println!("output mismatch for index {}. Expected {} got {}", i, lower.to_str_radix(16), gpu_out[i].to_str_radix(16));
+            // let lower = v & BigUint::from(2_u32).pow(128) - BigUint::from(1_u32);
+            if &gpu_out[i] != v {
+                println!("output mismatch for index {}. Expected {} got {}", i, v.to_str_radix(16), gpu_out[i].to_str_radix(16));
+            let in0 = BigUint::new(input.value0[i].to_vec());
+            let in1 = BigUint::new(input.value1[i].to_vec());
+            println!("{} {}", in0.to_string(), in1.to_string());
             }
         }
 
@@ -374,11 +414,12 @@ async fn execute_gpu(
                                 //   myPointer = NULL;
                                 // It effectively frees the memory
 
+        let finish = gpu_start.elapsed();
         Some((result
             .values
             .iter()
             .map(|&n| BigUint::new(n.to_vec()))
-            .collect::<Vec<BigUint>>(), gpu_start.elapsed()))
+            .collect::<Vec<BigUint>>(), finish))
 
     } else {
         panic!("failed to run compute on gpu!")
