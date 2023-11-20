@@ -32,13 +32,31 @@ fn prime() -> (BigUint, BigUint, [u32; LIMB_COUNT], [u32; LIMB_COUNT*2]) {
     (p, r, p_slice, r_slice)
 }
 
+fn build_subgroup(size: u32) -> Vec<BigUint> {
+    let (p, _, _, _) = prime();
+    let g = BigUint::from(85408008396924667383611388730472331217_u128);
+
+    let numer = &p - BigUint::from(1_u32);
+    let exp = &numer / BigUint::from(size);
+    if exp.clone() * size != numer {
+        panic!("subgroup is not a divisor of field");
+    }
+    let root = g.modpow(&exp, &p);
+    let mut out: Vec<BigUint> = Vec::new();
+    out.push(BigUint::from(1_u32));
+    out.push(root.clone());
+    for _ in 2..size {
+        out.push((&out[out.len() - 1] * root.clone()) % p.clone());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests;
 
 #[cfg(not(test))]
 fn main() {
     env_logger::init();
-    prime();
     pollster::block_on(run());
 }
 
@@ -86,23 +104,34 @@ fn rand() -> Input {
     let mut in0: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
     let mut in1: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
     for i in 0..ITERATIONS {
-        // 4 fields for each multiplication
-        // in0, in1, p, out
         for j in 0..LIMB_COUNT {
-            // in0[i][j] = 0;
-            // in1[i][j] = 0;
-            // if j == 0 || j == 1 {
-            //     in0[i][j] = rand::random::<u32>();
-            //     in1[i][j] = rand::random::<u32>();
-            // }
             in0[i][j] = rand::random::<u32>();
             in1[i][j] = rand::random::<u32>();
             if j == 3 {
-                // Inputs to the multiplication function must be in the field
+                in0[i][j] >>= 10;
+                in1[i][j] >>= 10;
+            }
+        }
+    }
+    Input {
+        value0: in0,
+        value1: in1,
+    }
+}
+
+fn ntt_input() -> Input {
+    let mut in0: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
+    let mut in1: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
+    let group = build_subgroup(u32::try_from(ITERATIONS).unwrap());
+    for i in 0..ITERATIONS {
+        for (j, v) in group[i].to_u32_digits().iter().enumerate() {
+            in0[i][j] = v.clone();
+        }
+        for j in 0..LIMB_COUNT {
+            in1[i][j] = rand::random::<u32>();
+            if j == 3 {
                 in0[i][j] = rand::random::<u32>() >> 10;
                 in1[i][j] = rand::random::<u32>() >> 10;
-                // in0[i][j] = 0x000fffff;
-                // in1[i][j] = 0xefffffff;
             }
         }
     }
@@ -205,21 +234,8 @@ async fn run() {
         for i in 0..ITERATIONS {
             let in0 = BigUint::new(input.value0[i].to_vec());
             let in1 = BigUint::new(input.value1[i].to_vec());
-            // let in2 = BigUint::new(input.value2[i].to_vec());
-            // let expected: BigUint = (in0 * in1) % in2; //BigUint::from(2_u32).pow(128);
             let expected: BigUint = (in0.clone() * in1.clone()) % p.clone(); // BigUint::from(2_u32).pow(128);
-            // println!("{}", expected.to_u32_digits().iter().map(|&v| v.to_string()).collect::<Vec<String>>().join(", "));
-            // println!("{}", expected.to_string());
             out.push(expected.clone());
-            // let m = (r.clone() * (in0.clone() * in1.clone())) / BigUint::from(2_u32).pow(256);
-            // let z = p.clone() * m;
-            // let f = ((in0.clone() * in1.clone()) - z.clone()) % BigUint::from(2_u32).pow(256);
-            // out.push(f.clone())
-            // println!("{} {}", f.to_string(), expected.to_string());
-            // var m = mul_r(v);
-            // var z = mul(p, &m);
-            // var f: array<u32, tuple_size_double>;
-            // sub_double(v, &z, &f);
         }
         println!("cpu: {:.2?}", cpu_start.elapsed());
         let mut incorrect_count = 0_u32;
@@ -237,6 +253,34 @@ async fn run() {
         if incorrect_count > 0 {
             println!("{} invalid of total {}", incorrect_count, ITERATIONS);
         }
+    }
+
+    // execute the ntt function
+    {
+        // let input = rand();
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &cs_module,
+            entry_point: "test_ntt",
+        });
+        let (gpu_out, time) = execute_gpu(&pipeline, &device, &queue, &ntt_input()).await.unwrap();
+        println!("gpu: {:.2?}", time);
+        let cpu_start = Instant::now();
+        // let mut out = Vec::new();
+        // let (p, _r, _, _) = prime();
+        // for i in 0..ITERATIONS {
+        //     let in0 = BigUint::new(input.value0[i].to_vec());
+        //     let in1 = BigUint::new(input.value1[i].to_vec());
+        //     let expected: BigUint = (in0.clone() * in1.clone()) % p.clone(); // BigUint::from(2_u32).pow(128);
+        //     out.push(expected.clone());
+        // }
+        println!("cpu: {:.2?}", cpu_start.elapsed());
+        // for (i, v) in out.iter().enumerate() {
+        //     if &gpu_out[i] != v {
+        //         println!("output mismatch for index {}. Expected {} got {}", i, v.to_str_radix(16), gpu_out[i].to_str_radix(16));
+        //     }
+        // }
 
     }
 }
@@ -326,7 +370,7 @@ async fn execute_gpu(
         cpass.set_pipeline(compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("modular multiplication");
-        cpass.dispatch_workgroups(u32::try_from(ITERATIONS).unwrap()/64, 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
+        cpass.dispatch_workgroups(64, 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
     }
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.

@@ -6,7 +6,7 @@ const tuple_size_double = 2u * tuple_size;
 const tuple_size_quad = 4u * tuple_size;
 const tuple_bits = tuple_size * 32u;
 
-const iterations = {iterations};
+const iterations = {iterations}u;
 
 const upper_mask: u32 = 0xffff0000u;
 const lower_mask: u32 = 0x0000ffffu;
@@ -17,7 +17,7 @@ var<storage, read> input0: array<array<u32, tuple_size>, iterations>;
 
 @group(0)
 @binding(1)
-var<storage, read> input1: array<array<u32, tuple_size>, iterations>;
+var<storage, read_write> input1: array<array<u32, tuple_size>, iterations>;
 
 @group(0)
 @binding(3)
@@ -40,24 +40,48 @@ const barrett_r = array(
 
 // var<storage, read_write> sum_terms: array<array<array<u32, tuple_size_double>, tuple_size_double>, iterations>;
 
+
+// TODO: test this
+fn addmod(
+    in0: array<u32, tuple_size>,
+    in1: array<u32, tuple_size>
+) -> array<u32, tuple_size> \{
+    var sum = add(in0, in1);
+    if gte(sum, barrett_p) \{
+        return sub(sum, barrett_p);
+    }
+    return sum;
+}
+
+fn submod(
+    in0: array<u32, tuple_size>,
+    in1: array<u32, tuple_size>
+) -> array<u32, tuple_size> \{
+    var v = in0;
+    if gt(in1, in0) \{
+        v = add(v, barrett_p);
+    }
+    return sub(v, in1);
+}
+
 // limb based addition, not modular, overflows wrap
 // break each limb into 16 bit sections and add
 // take the upper bits as the carry
 fn add(
-    in0: ptr<function, array<u32, tuple_size>>,
-    in1: ptr<function, array<u32, tuple_size>>,
-    out: ptr<function, array<u32, tuple_size>>
-) \{
+    in0: array<u32, tuple_size>,
+    in1: array<u32, tuple_size>
+) -> array<u32, tuple_size> \{
+    var out: array<u32, tuple_size>;
     var carry: u32;
-
     var i: u32;
     {{ for _ in tuple_arr }}
     \{
         i = { @index }u;
-        (*out)[{ @index }u] = (*in0)[{ @index }u] + (*in1)[{ @index }u] + carry;
-        carry = u32(((*out)[{ @index }u] < (*in0)[{ @index }u]) || ((*out)[{ @index }u] < (*in1)[{ @index }u]));
+        out[{ @index }u] = in0[{ @index }u] + in1[{ @index }u] + carry;
+        carry = u32((out[{ @index }u] < in0[{ @index }u]) || (out[{ @index }u] < in1[{ @index }u]));
     }
     {{ endfor }}
+    return out;
 }
 
 fn add_double(
@@ -120,6 +144,22 @@ fn sub_double(
     }
     {{ endfor }}
     return out;
+}
+
+fn gt(
+    in0: array<u32, tuple_size>,
+    in1: array<u32, tuple_size>
+) -> bool \{
+    {{ for i in tuple_arr_reverse }}
+    \{
+        if in0[{i}u] > in1[{i}u] \{
+            return true;
+        } else if in0[{i}u] < in1[{i}u] \{
+            return false;
+        }
+    }
+    {{ endfor }}
+    return false;
 }
 
 fn gte(
@@ -320,26 +360,59 @@ fn mul_16(
     return out;
 }
 
+fn mulmod(
+    in0: array<u32, tuple_size>,
+    in1: array<u32, tuple_size>
+) -> array<u32, tuple_size> \{
+    var r = mul(in0, in1);
+    return barrett(r);
+}
+
+@compute
+@workgroup_size(64)
+fn test_ntt(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>
+) \{
+    let _gap: u32 = 1u;
+    var gap: u32 = 1u;
+    while (gap < iterations) \{
+        let chunks = iterations / (gap << 1u);
+        let inc = 64u * (gap << 1u);
+        // outer loop is indexed by the global invocation
+
+        for (var i: u32 = global_id.x; i < iterations; i += inc) \{
+            // inner loop is indexed by the local invocation
+            for (var j: u32 = local_id.x; j < gap; j += 64u) \{
+                // high = input1[i + j]
+                // low = input1[i + gap + j]
+                var hi = input1[i + j];
+                var lo = input1[i + gap + j];
+                var new_hi = mulmod(hi, input0[chunks * j]);
+                // input[i + j] = new_high;
+                var neg = submod(lo, new_hi);
+                // set the new low value
+                input1[i + gap + j] = addmod(lo, new_hi);
+                // set the new high value
+                input1[i + j] = neg;
+            }
+
+        }
+        gap <<= 1u;
+        storageBarrier();
+    }
+    // just to fix compile errors
+    outputs[0][0] = 0u;
+}
+
+
 // Inputs to this function must be in the range of the field
 @compute
 @workgroup_size(64)
 fn test_mul(
     @builtin(global_invocation_id) global_id: vec3<u32>
 ) \{
-    var in0: array<u32, tuple_size>;
-    var in1: array<u32, tuple_size>;
-
-    for (var i: u32 = 0u; i < tuple_size; i++) \{
-        in0[i] = input0[global_id.x][i];
-        in1[i] = input1[global_id.x][i];
-    }
-    var r = mul(in0, in1);
-    var f = barrett(r);
-    // only outputs the lower tuple of bits
-    for (var i: u32 = 0u; i < tuple_size; i++) \{
-        outputs[global_id.x][i] = f[i];
-    }
-    // outputs[global_id.x] = p;
+    outputs[global_id.x] = mulmod(input0[global_id.x], input1[global_id.x]);
 }
 
 // step 1: build the list of 16 bit multiplications to be performed
@@ -351,14 +424,5 @@ fn test_mul(
 fn test_add(
     @builtin(global_invocation_id) global_id: vec3<u32>
 ) \{
-    var in0: array<u32, tuple_size>;
-    var in1: array<u32, tuple_size>;
-    var p: array<u32, tuple_size>;
-
-    for (var i: u32 = 0u; i < tuple_size; i++) \{
-        in0[i] = input0[global_id.x][i];
-        in1[i] = input1[global_id.x][i];
-    }
-    add(&in0, &in1, &p);
-    outputs[global_id.x] = p;
+    outputs[global_id.x] = add(input0[global_id.x], input1[global_id.x]);
 }
