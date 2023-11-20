@@ -7,7 +7,7 @@ use tinytemplate::TinyTemplate;
 use serde::{Serialize};
 
 // number of multiplications to do
-const ITERATIONS: usize = 4000;
+const ITERATIONS: usize = 4096;
 // const INPUT_COUNT: usize = 3;
 const LIMB_COUNT: usize = 4;
 
@@ -56,7 +56,6 @@ struct Context {
 pub struct Input {
     value0: [[u32; LIMB_COUNT]; ITERATIONS],
     value1: [[u32; LIMB_COUNT]; ITERATIONS],
-    value2: [[u32; LIMB_COUNT]; ITERATIONS]
 }
 
 #[repr(C)]
@@ -86,7 +85,6 @@ fn zero_out() -> Output {
 fn rand() -> Input {
     let mut in0: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
     let mut in1: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
-    let mut in2: [[u32; LIMB_COUNT]; ITERATIONS] = [[0; LIMB_COUNT]; ITERATIONS];
     for i in 0..ITERATIONS {
         // 4 fields for each multiplication
         // in0, in1, p, out
@@ -100,20 +98,17 @@ fn rand() -> Input {
             in0[i][j] = rand::random::<u32>();
             in1[i][j] = rand::random::<u32>();
             if j == 3 {
-                in0[i][j] = 0x000fffff;
-                in1[i][j] = 0x000fffff;
-            }
-            if j == 0 {
-                in2[i][j] = 0xfffffffe;
-            } else {
-                in2[i][j] = 0xffffffff;
+                // Inputs to the multiplication function must be in the field
+                in0[i][j] = rand::random::<u32>() >> 10;
+                in1[i][j] = rand::random::<u32>() >> 10;
+                // in0[i][j] = 0x000fffff;
+                // in1[i][j] = 0xefffffff;
             }
         }
     }
     Input {
         value0: in0,
         value1: in1,
-        value2: in2,
     }
 }
 
@@ -221,22 +216,26 @@ async fn run() {
             // let f = ((in0.clone() * in1.clone()) - z.clone()) % BigUint::from(2_u32).pow(256);
             // out.push(f.clone())
             // println!("{} {}", f.to_string(), expected.to_string());
-
-    // var m = mul_r(v);
-    // var z = mul(p, &m);
-    // var f: array<u32, tuple_size_double>;
-    // sub_double(v, &z, &f);
+            // var m = mul_r(v);
+            // var z = mul(p, &m);
+            // var f: array<u32, tuple_size_double>;
+            // sub_double(v, &z, &f);
         }
         println!("cpu: {:.2?}", cpu_start.elapsed());
+        let mut incorrect_count = 0_u32;
         for (i, v) in out.iter().enumerate() {
             // println!("{} {}", v.to_str_radix(16), gpu_out[i].to_str_radix(16));
-            // let lower = v & BigUint::from(2_u32).pow(128) - BigUint::from(1_u32);
+            // let lower = v & (BigUint::from(2_u32).pow(128) - BigUint::from(1_u32));
             if &gpu_out[i] != v {
                 println!("output mismatch for index {}. Expected {} got {}", i, v.to_str_radix(16), gpu_out[i].to_str_radix(16));
-            let in0 = BigUint::new(input.value0[i].to_vec());
-            let in1 = BigUint::new(input.value1[i].to_vec());
-            println!("{} {}", in0.to_string(), in1.to_string());
+                incorrect_count += 1;
+            // let in0 = BigUint::new(input.value0[i].to_vec());
+            // let in1 = BigUint::new(input.value1[i].to_vec());
+            // println!("{} {}", in0.to_string(), in1.to_string());
             }
+        }
+        if incorrect_count > 0 {
+            println!("{} invalid of total {}", incorrect_count, ITERATIONS);
         }
 
     }
@@ -280,12 +279,6 @@ async fn execute_gpu(
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST,
     });
-    let input2_storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Storage Buffer"),
-        contents: bytemuck::cast_ref::<InputSingle, [u8; 4*ITERATIONS*LIMB_COUNT]>(&InputSingle { value: data.value2 }),
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST,
-    });
 
     let output_storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Output Buffer"),
@@ -315,9 +308,6 @@ async fn execute_gpu(
             binding: 1,
             resource: input1_storage_buffer.as_entire_binding(),
         }, wgpu::BindGroupEntry {
-            binding: 2,
-            resource: input2_storage_buffer.as_entire_binding(),
-        }, wgpu::BindGroupEntry {
             binding: 3,
             resource: output_storage_buffer.as_entire_binding(),
         }
@@ -336,7 +326,7 @@ async fn execute_gpu(
         cpass.set_pipeline(compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("modular multiplication");
-        cpass.dispatch_workgroups(64, 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
+        cpass.dispatch_workgroups(u32::try_from(ITERATIONS).unwrap()/64, 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
     }
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.

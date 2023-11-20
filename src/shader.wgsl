@@ -20,10 +20,6 @@ var<storage, read> input0: array<array<u32, tuple_size>, iterations>;
 var<storage, read> input1: array<array<u32, tuple_size>, iterations>;
 
 @group(0)
-@binding(2)
-var<storage, read> input2: array<array<u32, tuple_size>, iterations>;
-
-@group(0)
 @binding(3)
 var<storage, read_write> outputs: array<array<u32, tuple_size>, iterations>;
 
@@ -130,7 +126,6 @@ fn gte(
     in0: array<u32, tuple_size>,
     in1: array<u32, tuple_size>
 ) -> bool \{
-    let start: u32 = tuple_size - 1u;
     {{ for i in tuple_arr_reverse }}
     \{
         if in0[{i}u] > in1[{i}u] \{
@@ -153,11 +148,7 @@ fn barrett(
     for (var i: u32 = 0u; i < tuple_size; i++) \{
         out[i] = f[i];
     }
-    if gte(out, barrett_p) \{
-        return sub(out, barrett_p);
-    } else \{
-        return out;
-    }
+    return out;
 }
 
 fn mul_r(
@@ -329,6 +320,7 @@ fn mul_16(
     return out;
 }
 
+// Inputs to this function must be in the range of the field
 @compute
 @workgroup_size(64)
 fn test_mul(
@@ -336,12 +328,10 @@ fn test_mul(
 ) \{
     var in0: array<u32, tuple_size>;
     var in1: array<u32, tuple_size>;
-    var in2: array<u32, tuple_size>;
 
     for (var i: u32 = 0u; i < tuple_size; i++) \{
         in0[i] = input0[global_id.x][i];
         in1[i] = input1[global_id.x][i];
-        in2[i] = input2[global_id.x][i];
     }
     var r = mul(in0, in1);
     var f = barrett(r);
@@ -368,7 +358,6 @@ fn test_add(
     for (var i: u32 = 0u; i < tuple_size; i++) \{
         in0[i] = input0[global_id.x][i];
         in1[i] = input1[global_id.x][i];
-        p[i] = input2[global_id.x][i];
     }
     add(&in0, &in1, &p);
     outputs[global_id.x] = p;
